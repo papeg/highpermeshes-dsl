@@ -154,6 +154,26 @@ namespace HPM::entity
         inline const auto& GetNodeIndices() const { return std::get<EntityDimension>(mesh.entity_node_index_list)[index]; }
 
         //!
+        //! \brief Get the index of the group this entity is in
+        //!
+        //! \return index of the group this entity is in
+        //!
+        inline const auto& GetGroupIndex() const { return mesh.group_index_list[index]; }
+        
+        //!
+        //! \brief Get the material parameter of this group
+        //!
+        //! \return the material parameter of this group
+        //!
+        inline const auto& GetMaterial() const { return mesh.group_material_values[GetGroupIndex()]; }
+        
+        //! \brief Get the domain dimensions of this mesh
+        //!
+        //! \return the domain dimenions of this mesh
+        //!
+        inline const auto& GetDomain() const { return mesh.domain; }
+
+        //!
         //! \brief Get the index of the cell that contains this entity.
         //!
         //! This function can only be called for entities that are cells or have been created by cells.

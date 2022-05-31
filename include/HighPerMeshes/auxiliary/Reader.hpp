@@ -13,6 +13,7 @@
 #include <vector>
 
 #include <HighPerMeshes/auxiliary/ArrayOperations.hpp>
+#include <HighPerMeshes/dsl/meshes/Dimensions.hpp>
 
 namespace HPM::auxiliary
 {
@@ -49,9 +50,9 @@ namespace HPM::auxiliary
         //! \param filename file to read from
         //! \return `true` in case of sucess, otherwise `false`
         //!
-        auto ReadNodesAndElements(std::vector<CoordinateT>& nodes, std::vector<ElementNodeIndexT>& elements, const std::string& filename) const
+        auto ReadNodesAndElements(std::vector<CoordinateT>& nodes, std::vector<ElementNodeIndexT>& elements, std::vector<size_t>& groups, std::vector<double>& material_groups, HPM::mesh::DomainDimensions dimensions, const std::string& filename) const
         {
-            return static_cast<const ReaderT&>(*this).ReadNodesAndElementsImplementation(nodes, elements, filename);
+            return static_cast<const ReaderT&>(*this).ReadNodesAndElementsImplementation(nodes, elements, groups, dimensions, filename);
         }
 
         //!
@@ -62,7 +63,7 @@ namespace HPM::auxiliary
         //! \param filename file to read from
         //! \return a tuple of containers holding the node coordinates and node index sets representing the elements
         //!
-        auto ReadNodesAndElements(const std::string& filename) const -> std::tuple<std::vector<CoordinateT>, std::vector<ElementNodeIndexT>>
+        auto ReadNodesAndElements(const std::string& filename) const -> std::tuple<std::vector<CoordinateT>, std::vector<ElementNodeIndexT>, std::vector<size_t>, std::vector<double>, HPM::mesh::DomainDimensions>
         {
             return static_cast<const ReaderT&>(*this).ReadNodesAndElementsImplementation(filename);
         }
@@ -122,23 +123,35 @@ namespace HPM::auxiliary
         //! \param filename file to read from
         //! \return returns 'true', if the arrays are filled otherwise 'false'
         //!
-        auto ReadNodesAndElementsImplementation(std::vector<CoordinateT>& nodes, std::vector<ElementNodeIndexT>& elements, const std::string& filename) const
+        auto ReadNodesAndElementsImplementation(std::vector<CoordinateT>& nodes, std::vector<ElementNodeIndexT>& elements, std::vector<size_t>& groups, std::vector<double>& group_materials, HPM::mesh::DomainDimensions& dimensions, const std::string& filename) const
         {
-            std::ifstream file(filename);
+            std::ifstream file(filename, std::ifstream::in);
+            if (!file) {
+                std::cerr << filename << " could not be opened" << std::endl;
+                exit(1);
+            }
             std::size_t num_nodes;
             std::size_t num_elements;
+            std::size_t num_groups;
             std::size_t dummy;
+            std::string dummy_string;
             std::string line;
 
             file.exceptions(std::ifstream::failbit | std::ifstream::badbit);
 
-            while (std::getline(file, line) && (line.find("NUMNP") == std::string::npos) && (line.find("NELEM") == std::string::npos))
-            {
+            while (std::getline(file, line)) {
+                if (line.find("MY HEADER") != std::string::npos) {
+                    file >> dimensions;
+                } else if ((line.find("NUMNP") != std::string::npos) && (line.find("NELEM") != std::string::npos)) {
+                    file >> num_nodes >> num_elements >> num_groups;
+                    break;
+                }
             }
-            file >> num_nodes >> num_elements;
 
             nodes.resize(num_nodes);
             elements.resize(num_elements);
+            groups.resize(num_elements);
+            group_materials.resize(num_groups);
 
             while (std::getline(file, line) && (line.find("NODAL COORDINATES") == std::string::npos))
             {
@@ -157,6 +170,22 @@ namespace HPM::auxiliary
                 for (auto& v : etov)
                     --v; //!< correct to 0-index, the .neu file provides 1-index
             }
+            while (std::getline(file, line) && (line.find("ELEMENT GROUP") == std::string::npos))
+            {
+            }
+            size_t num_elements_in_group;
+            for (size_t i = 0; i < num_groups; i++) {
+                file >> dummy_string >> dummy >> dummy_string >> num_elements_in_group >> dummy_string >> group_materials[i];
+                // read to the line where node indices are 
+                for (size_t j = 0; j < 3; j++) {
+                    std::getline(file, line);
+                }
+                size_t element_index;
+                for (size_t k = 0; k < num_elements_in_group; k++) {
+                    file >> element_index; 
+                    groups[element_index - 1] = i; // store group for element with corrected indices
+                }
+            }
 
             // std::sort(elements.begin(), elements.end(), std::less<ElementNodeIndexT>());
 
@@ -166,22 +195,23 @@ namespace HPM::auxiliary
         //!
         //! \brief Read node and element sets from a 'GAMBIT neutral' mesh file.
         //!
-        //! \param nodes a container to put in the nodes
-        //! \param elements a container to put in the elements
         //! \param filename file to read from
-        //! \return returns 'true', if the arrays are filled otherwise 'false'
+        //! \return returns tuple of nodes and elements
         //!
-        auto ReadNodesAndElementsImplementation(const std::string& filename) const -> std::tuple<std::vector<CoordinateT>, std::vector<ElementNodeIndexT>>
+        auto ReadNodesAndElementsImplementation(const std::string& filename) const -> std::tuple<std::vector<CoordinateT>, std::vector<ElementNodeIndexT>, std::vector<size_t>, std::vector<double>, HPM::mesh::DomainDimensions>
         {
             std::vector<CoordinateT> nodes;
             std::vector<ElementNodeIndexT> elements;
+            std::vector<size_t> groups;
+            std::vector<double> group_materials;
+            HPM::mesh::DomainDimensions dimensions;
 
-            if (!ReadNodesAndElementsImplementation(nodes, elements, filename))
+            if (!ReadNodesAndElementsImplementation(nodes, elements, groups, group_materials, dimensions, filename))
             {
                 std::cerr << "error from GambitMeshFileReader::read_nodes_and_elements() : error while reading from file " << filename << std::endl << std::flush;
             }
 
-            return {nodes, elements};
+            return {nodes, elements, groups, group_materials, dimensions};
         }
     };
 

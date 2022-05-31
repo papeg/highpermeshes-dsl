@@ -20,9 +20,18 @@
 #include <HighPerMeshes/dsl/entities/Geometry.hpp>
 #include <HighPerMeshes/dsl/entities/Topology.hpp>
 #include <HighPerMeshes/dsl/meshes/Range.hpp>
+#include <HighPerMeshes/dsl/meshes/Dimensions.hpp>
 
 namespace HPM::mesh
 {
+    // Flags used for identifying TFSF boundaries
+    enum TFSF
+    {
+        None,
+        FromScatteredToTotal,
+        FromTotalToScattered,
+    };
+
     //!
     //! \brief Mesh data type.
     //!
@@ -166,6 +175,51 @@ namespace HPM::mesh
             CellT::Geometry::SetupGeometry(*this);
         }
 
+        Mesh(const std::vector<CoordinateT>& nodes, const std::vector<std::array<std::size_t, NumNodesPerCell>>& cell_node_index_list, std::vector<size_t> group_index_list, std::vector<double> group_material_values, HPM::mesh::DomainDimensions domain)
+            : nodes(nodes), group_index_list(group_index_list), group_material_values(group_material_values), domain(domain)
+        {
+            std::get<CellDimension>(entity_node_index_list) = cell_node_index_list;
+
+            // Set up internal data members according to the entity type: the cell type must be used!
+            CellT::Topology::SetupTopology(*this);
+            CellT::Geometry::SetupGeometry(*this);
+
+            // create PML flags
+            pml.resize(GetNumEntities());
+            for (std::size_t cell_index = 0; cell_index < GetNumEntities(); ++cell_index)
+            {
+                pml[cell_index] = (group_material_values[group_index_list[cell_index]] == -1.0);
+            }
+
+            // create TFSF flags
+            tfsf.resize(GetNumEntities());
+            for (const auto& cell: GetEntities())
+            {
+                const std::size_t cell_index = cell.GetTopology().GetIndex();
+                for (const auto& face: cell.GetTopology().GetSubEntities())
+                {
+                    const std::size_t face_index = face.GetTopology().GetLocalIndex();
+                    const std::size_t neighbor_index = face.GetTopology().GetNeighboringCell().GetTopology().GetIndex();
+                    if ((group_material_values[group_index_list[cell_index]] == 1.00001) && (group_material_values[group_index_list[neighbor_index]] == 1.0))
+                    {
+                        tfsf[cell_index][face_index] = TFSF::FromTotalToScattered;
+                    } else if ((group_material_values[group_index_list[cell_index]] == 1.0) && (group_material_values[group_index_list[neighbor_index]] == 1.00001))
+                    {
+                        tfsf[cell_index][face_index] = TFSF::FromScatteredToTotal;
+                    } else {
+                        tfsf[cell_index][face_index] = TFSF::None;
+                    }
+                }
+            }
+            // clear flags
+            for (size_t i = 0; i < group_material_values.size(); i++)
+            {
+                if (group_material_values[i] == -1.0 || group_material_values[i] == 1.00001) {
+                    this->group_material_values[i] = 1.0;
+                }
+            }
+        }
+
         //!
         //! \brief Create a mesh from a mesh file.
         //!
@@ -184,6 +238,16 @@ namespace HPM::mesh
             auto&& fields = MeshReader().ReadNodesAndElements(filename);
 
             return {std::get<0>(fields), std::get<1>(fields)};
+        }
+
+        template <template <typename, typename> class ReaderT>
+        static auto CreateFromFileWithGroups(const std::string& filename) -> Mesh
+        {
+            using NodeIndexT = std::array<std::size_t, NumNodesPerCell>;
+            using MeshReader = ReaderT<CoordinateT, NodeIndexT>;
+            auto&& fields = MeshReader().ReadNodesAndElements(filename);
+
+            return {std::get<0>(fields), std::get<1>(fields), std::get<2>(fields), std::get<3>(fields), std::get<4>(fields)};
         }
 
         //!
@@ -351,6 +415,10 @@ namespace HPM::mesh
         {
             return GetEntityRange<Dimension>([](const auto&) { return true; }, begin, end);
         }
+        
+        DomainDimensions domain;
+        std::vector<bool> pml;
+        std::vector<std::array<TFSF, 4>> tfsf;
 
         protected:
         //!
@@ -477,6 +545,8 @@ namespace HPM::mesh
         std::array<std::vector<std::vector<std::size_t>>, CellDimension + 1> entity_neighbor_list;    // array<vector<vector<size_t>>, CellDimension+1>
         std::array<std::vector<CoordinateT>, CellDimension + 1> normals;                              // array<vector<CoordinateT>, CellDimension+1>
         EntityIndexListT<ScalarT> normal_orientations;                                                // tuple<vector<array<ScalarT, NumSubEntitiesOfCell<0>>,..,array<ScalarT, 1>>>
+        std::vector<size_t> group_index_list;                                                         // vector<size_t>
+        std::vector<double> group_material_values;                                                    // vector<double>
 
 #if defined(MESH_VALUE_LOOKUP)
         template <typename T, std::size_t M, std::size_t N>
