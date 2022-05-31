@@ -257,6 +257,19 @@ inline auto operator OP(const T& x)->Matrix&                                    
             return (sum == 0);
         }
 
+        friend std::ostream& operator<<(std::ostream& os, const Matrix& m)
+        {
+            os << "Matrix<" << M << ", " << N << ">{" << '\n';
+            for (std::size_t i = 0; i < M; i++) {
+                for (std::size_t j = 0; j < N; j++) {
+                    os << "\t" << m[i][j];
+                }
+                os << '\n';
+            }
+            os << "}" << std::endl;
+            return os;
+        }
+
         //!
         //! \brief Matrix transpose operation.
         //!
@@ -307,6 +320,44 @@ inline auto operator OP(const T& x)->Matrix&                                    
             return determinant;
         }
 
+        inline auto Adjoint() const -> Matrix
+        {
+            static_assert(M == N, "error: adjoint cannot be calculated for M != N");
+            static_assert(M > 0 && M < 4, "error: M (or N) must be any of 1..3.");
+            
+            //Matrix<T, N, M> matrix = 0;
+            //MMatrix<T, N, M> matrix = 0;
+            
+            if constexpr (M == 2)
+            {
+                return {(*this)[1][1], -(*this)[0][1],
+                       -(*this)[1][0],  (*this)[0][0]};
+            }
+            else if constexpr(N == 3)
+            {
+                // Sarrus' rule
+                const T a = (*this)[0][0];
+                const T b = (*this)[0][1];
+                const T c = (*this)[0][2];
+                const T d = (*this)[1][0];
+                const T e = (*this)[1][1];
+                const T f = (*this)[1][2];
+                const T g = (*this)[2][0];
+                const T h = (*this)[2][1];
+                const T i = (*this)[2][2];
+
+                return {(e * i - f * h), (c * h - b * i), (b * f - c * e),
+                        (f * g - d * i), (a * i - c * g), (c * d - a * f),
+                        (d * h - e * g), (b * g - a * h), (a * e - b * d)};
+            }
+        }
+            
+        inline auto Cofactor()
+        {
+            return (*this).Adjoint().Transpose();
+        }
+
+
         //!
         //! \brief Matrix determinant calculation.
         //!
@@ -348,26 +399,7 @@ inline auto operator OP(const T& x)->Matrix&                                    
 
                 const T inv_det = 1 / det;
 
-                if constexpr (M == 2)
-                {
-                    return {(*this)[1][1] * inv_det, -(*this)[0][1] * inv_det, -(*this)[1][0] * inv_det, (*this)[0][0] * inv_det};
-                }
-                else if constexpr (M == 3)
-                {
-                    // Sarrus' rule
-                    const T a = (*this)[0][0];
-                    const T b = (*this)[0][1];
-                    const T c = (*this)[0][2];
-                    const T d = (*this)[1][0];
-                    const T e = (*this)[1][1];
-                    const T f = (*this)[1][2];
-                    const T g = (*this)[2][0];
-                    const T h = (*this)[2][1];
-                    const T i = (*this)[2][2];
-
-                    return {(e * i - f * h) * inv_det, (c * h - b * i) * inv_det, (b * f - c * e) * inv_det, (f * g - d * i) * inv_det, (a * i - c * g) * inv_det,
-                            (c * d - a * f) * inv_det, (d * h - e * g) * inv_det, (b * g - a * h) * inv_det, (a * e - b * d) * inv_det};
-                }
+                return (*this).Adjoint() * inv_det;
             }
             else
             {

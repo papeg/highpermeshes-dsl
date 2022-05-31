@@ -30,6 +30,60 @@ namespace HPM::math
         return result;
     }
 
+    constexpr auto LogGamma(const double x)
+    {
+        double coeff[6] = {
+            76.18009172947146,
+            -86.50532032941677,
+            24.01409824083091,
+            -1.231739572450155,
+            0.1208650973866179e-2,
+            -0.5395239384953e-5};
+
+        double z = x, y = x, tmp = x + 5.5;
+        tmp -= (z + 0.5) * log(tmp);
+
+        double ser = 1.000000000190015;
+
+        for (int j = 0; j <= 5; ++j) {
+            ser += coeff[j] / ++y;
+        }
+
+        double result = -tmp + log(2.5066282746310005 * ser / z);
+        return result;
+    } 
+
+
+    constexpr auto FastFactorial(const std::size_t n)
+    {
+        if (n > 32) {
+            return exp(LogGamma((double)n + 1.0));
+        }
+        double a[33] = {
+        // table of precalculated results.
+        //  0!   1!   2!   3!   4!    5!     6!
+            1.0, 1.0, 2.0, 6.0, 24.0, 120.0, 720.0
+        };
+        size_t ntop = 6, i = 0;
+        while (ntop < n) {
+            i = ntop++;
+            a[ntop] = a[i] * ntop;
+        }
+        return a[n];
+    }
+
+    constexpr double Gamma(const double x)
+    {
+        int x_int = (int) x;
+        if (x == x_int) {
+            return FastFactorial(x_int - 1);
+        } else {
+            return exp(LogGamma(x));
+        }
+    }
+
+
+
     //!
     //! \brief Get a specific element among all combinations of `M` numbers out of a set of `N>M` numbers.
     //!
